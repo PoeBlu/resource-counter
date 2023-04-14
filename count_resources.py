@@ -22,7 +22,7 @@ def controller(access, secret, profile):
                 click.echo('Error establishing AWS connection. Likely bad credentials provided.')
                 sys.exit()
     elif profile:
-        click.echo('Establishing AWS session using the profile- ' + profile)
+        click.echo(f'Establishing AWS session using the profile- {profile}')
         try:
             session = boto3.session.Session(profile_name=profile)
         except:
@@ -41,7 +41,7 @@ def controller(access, secret, profile):
 
     # account_id = iam.CurrentUser().arn.split(':')[4]
     account_id = iam.get_caller_identity()["Account"]
-    click.echo('Current account ID: ' + account_id)
+    click.echo(f'Current account ID: {account_id}')
 
     # Initialize dictionary to hold the counts. Pull the regions using EC2, since that is in every region.
     # Then build out the master list of regions to then fill in the service counts
@@ -77,10 +77,10 @@ def controller(access, secret, profile):
     click.echo(' ')
     click.echo('Resource totals across all regions')
     for key, value in sorted(resource_totals.items()):
-        click.echo("{} : {}".format(key, value))
+        click.echo(f"{key} : {value}")
     total = sum(resource_totals.values())
     click.echo('')
-    click.echo('Total resources: ' + str(total))
+    click.echo(f'Total resources: {str(total)}')
 
 # ec2 = boto3.client('ec2', region_name='us-west-2')
 
@@ -136,9 +136,9 @@ def ec2_counter(account_id):
         peering_counter = len(list(vpc_peering_connection_iterator))
         acl_counter = len(list(network_acl_iterator))
         ip_counter = len(list(vpc_address_iterator))
-        gateway_counter = 0
-        for gateway in nat_gateway_iterator:
-            gateway_counter += len(gateway['NatGateways'])
+        gateway_counter = sum(
+            len(gateway['NatGateways']) for gateway in nat_gateway_iterator
+        )
         endpoint_counter = len(endpoints['VpcEndpoints'])
 
         # add to the cross region totals
@@ -222,15 +222,14 @@ def autoscaling_counter():
         autoscale_iterator = autoscaling.paginate()
         configurations_iterator = configurations.paginate()
 
-        # initialize region counts
-        autoscale_count = 0
-        configuration_count = 0
-
-        for autoscale in autoscale_iterator:
-            autoscale_count += len(autoscale['AutoScalingGroups'])
-        for configuration in configurations_iterator:
-            configuration_count += len(configuration['LaunchConfigurations'])
-
+        autoscale_count = sum(
+            len(autoscale['AutoScalingGroups'])
+            for autoscale in autoscale_iterator
+        )
+        configuration_count = sum(
+            len(configuration['LaunchConfigurations'])
+            for configuration in configurations_iterator
+        )
         total_autoscaling_groups += autoscale_count
         total_launch_configurations += configuration_count
 
@@ -259,12 +258,10 @@ def balancer_counter():
         elb_paginator = elb.get_paginator('describe_load_balancers')
         elb_iterator = elb_paginator.paginate()
 
-        #initialize region count
-        elb_counter = 0
-
-        for balancer in elb_iterator:
-            elb_counter += len(balancer['LoadBalancerDescriptions'])
-
+        elb_counter = sum(
+            len(balancer['LoadBalancerDescriptions'])
+            for balancer in elb_iterator
+        )
         elb_total += elb_counter
         resource_counts[region]['classic load balancers'] = elb_counter
 
@@ -276,24 +273,18 @@ def balancer_counter():
         elb_paginator = elb.get_paginator('describe_load_balancers')
         elb_iterator = elb_paginator.paginate()
 
-        #initialize region count
-        elb_counter = 0
-
-        for balancer in elb_iterator:
-            elb_counter += len(balancer['LoadBalancers'])
-
+        elb_counter = sum(len(balancer['LoadBalancers']) for balancer in elb_iterator)
         elbv2_total += elb_counter
         resource_counts[region]['application and network load balancers'] = elb_counter
     resource_totals['Classic Load Balancers'] = elb_total
     resource_totals['Application and Network Load Balancers'] = elbv2_total
 
 def s3_counter():
-    total_buckets = 0
     # S3 gives you a full count no matter what the region setting
     s3 = session.resource('s3', region_name='us-west-2')
     bucket_iterator = s3.buckets.all()
     bucket_counter = len(list(bucket_iterator))
-    total_buckets += bucket_counter
+    total_buckets = 0 + bucket_counter
     # resource_counts[region]['s3 buckets'] = bucket_counter
     resource_totals['S3 Buckets'] = total_buckets
 
@@ -304,11 +295,11 @@ def lambda_counter():
 
     for region in region_list:
         aws_lambda = session.client('lambda', region_name=region)
-        function_counter = 0
         function_paginator = aws_lambda.get_paginator('list_functions')
         function_iterator = function_paginator.paginate()
-        for function in function_iterator:
-            function_counter += len(function['Functions'])
+        function_counter = sum(
+            len(function['Functions']) for function in function_iterator
+        )
         total_functions += function_counter
         resource_counts[region]['lambdas'] = function_counter
     resource_totals['Lambda Functions'] = total_functions
@@ -346,11 +337,11 @@ def config_counter():
 
     for region in region_list:
         config = session.client('config', region_name=region)
-        config_rules_counter = 0
         config_rules_paginator = config.get_paginator('describe_config_rules')
         config_rules_iterator = config_rules_paginator.paginate()
-        for rule in config_rules_iterator:
-            config_rules_counter += len(rule['ConfigRules'])
+        config_rules_counter = sum(
+            len(rule['ConfigRules']) for rule in config_rules_iterator
+        )
         total_config_rules += config_rules_counter
         resource_counts[region]['config rules'] = config_rules_counter
     resource_totals['Config Rules'] = total_config_rules
@@ -388,11 +379,9 @@ def kms_counter():
 
     for region in region_list:
         kms = session.client('kms', region_name=region)
-        keys_counter = 0
         kms_paginator = kms.get_paginator('list_keys')
         kms_iterator = kms_paginator.paginate()
-        for key in kms_iterator:
-            keys_counter += len(key['Keys'])
+        keys_counter = sum(len(key['Keys']) for key in kms_iterator)
         total_keys += keys_counter
         resource_counts[region]['kms keys'] = keys_counter
     resource_totals['KMS Keys'] = total_keys
@@ -417,11 +406,11 @@ def rds_counter():
 
     for region in region_list:
         rds = session.client('rds', region_name=region)
-        dbinstances_counter = 0
         rds_paginator = rds.get_paginator('describe_db_instances')
         rds_iterator = rds_paginator.paginate()
-        for instance in rds_iterator:
-            dbinstances_counter += len(instance['DBInstances'])
+        dbinstances_counter = sum(
+            len(instance['DBInstances']) for instance in rds_iterator
+        )
         total_dbinstances += dbinstances_counter
         resource_counts[region]['rds instances'] = dbinstances_counter
     resource_totals['RDS Instances'] = total_dbinstances
